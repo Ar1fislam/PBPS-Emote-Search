@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PBPS Emote Search</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 24px; }
+    input { width: min(720px, 100%); padding: 10px; font-size: 16px; }
+    .row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 16px; }
+    .panel { flex: 1 1 360px; border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
+    .list { max-height: 50vh; overflow: auto; }
+    button { padding: 8px 10px; cursor: pointer; }
+    .muted { color: #666; font-size: 13px; }
+    .item { padding: 8px; border-bottom: 1px solid #eee; cursor: pointer; }
+    .item:hover { background: #fafafa; }
+    .title { font-weight: 600; margin: 0 0 8px 0; }
+    pre { white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h2 style="margin:0 0 6px 0;">PBPS Emote Search</h2>
+  <div class="muted">Type a partial name (supports spaces). Click a result to fetch details.</div>
+
+  <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+    <input id="q" placeholder="Search emote (e.g. golden goat / soseri / spooo)..." />
+    <button id="refreshBtn">Refresh list</button>
+  </div>
+
+  <div class="row">
+    <div class="panel">
+      <div class="title">Results <span class="muted" id="meta"></span></div>
+      <div class="list" id="results"></div>
+      <!-- <hr />
+      <div class="muted">Last /api/emotes response</div> -->
+      <pre id="debug"></pre>
+    </div>
+
+    <div class="panel">
+      <div class="title">Details</div>
+      <div id="details" class="muted">Click an emote to load details…</div>
+    </div>
+  </div>
+
+<script>
+  const q = document.getElementById("q");
+  const resultsEl = document.getElementById("results");
+  const detailsEl = document.getElementById("details");
+  const metaEl = document.getElementById("meta");
+  const debugEl = document.getElementById("debug");
+  const refreshBtn = document.getElementById("refreshBtn");
+
+  let lastTimer = null;
+
+  function escapeHtml(s) {
+    return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
+  }
+
+  async function search() {
+    const term = q.value.trim();
+    let data;
+
+    try {
+      const res = await fetch(`/api/emotes?q=${encodeURIComponent(term)}&limit=300`);
+      data = await res.json();
+    } catch (e) {
+      data = { detail: String(e) };
+    }
+    //to show the json file below comment off
+    // debugEl.textContent = JSON.stringify(data, null, 2);
+
+    const items = data.items || [];
+    metaEl.textContent = `(${items.length})`;
+
+    resultsEl.innerHTML = "";
+    items.forEach(name => {
+      const div = document.createElement("div");
+      div.className = "item";
+      div.textContent = name;
+      div.onclick = () => loadDetails(name);
+      resultsEl.appendChild(div);
+    });
+  }
+
+  async function loadDetails(name) {
+    detailsEl.innerHTML = `Loading <b>${escapeHtml(name)}</b>…`;
+
+    const res = await fetch(`/api/emotes/${encodeURIComponent(name)}`);
+    const d = await res.json();
+
+    if (d.detail) {
+      detailsEl.innerHTML = `<pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>`;
+      return;
+    }
+
+    if (d.notFound) {
+      detailsEl.innerHTML = `No details found for <b>${escapeHtml(d.emoteName)}</b>.`;
+      return;
+    }
+//to show the details json file
+//     detailsEl.innerHTML = `
+//       <div><b>Emote</b>: ${escapeHtml(d.emoteName || "")}</div>
+//       <div><b>Channel</b>: ${
+//         d.channelUrl
+//           ? `<a href="${escapeHtml(d.channelUrl)}" target="_blank">${escapeHtml(d.channel || d.channelUrl)}</a>`
+//           : escapeHtml(d.channel || "—")
+//       }</div>
+//       <div><b>Source</b>: ${escapeHtml(d.source || "—")}</div>
+//       <div><b>Tier</b>: ${escapeHtml(d.tier || "—")}</div>
+//       <div><b>Expires</b>: ${escapeHtml(d.expires || "—")}</div>
+//       <div style="margin-top:8px;"><a href="${escapeHtml(d.detailsUrl)}" target="_blank">Open original details page</a></div>
+//       <hr />
+//       <div class="muted">Raw JSON</div>
+//       <pre>${escapeHtml(JSON.stringify(d, null, 2))}</pre>
+//     `;
+//   }
+    detailsEl.innerHTML = `
+      <div><b>Emote</b>: ${escapeHtml(d.emoteName || "")}</div>
+      <div><b>Channel</b>: ${
+        d.channelUrl
+          ? `<a href="${escapeHtml(d.channelUrl)}" target="_blank">${escapeHtml(d.channel || d.channelUrl)}</a>`
+          : escapeHtml(d.channel || "—")
+      }</div>
+      <div><b>Source</b>: ${escapeHtml(d.source || "—")}</div>
+      <div><b>Tier</b>: ${escapeHtml(d.tier || "—")}</div>
+      <div><b>Expires</b>: ${escapeHtml(d.expires || "—")}</div>
+      <div style="margin-top:8px;"><a href="${escapeHtml(d.detailsUrl)}" target="_blank">Open original details page</a></div>
+    
+    `;
+  }
+
+  refreshBtn.onclick = async () => {
+    const res = await fetch("/api/refresh", { method: "POST" });
+    const data = await res.json();
+    debugEl.textContent = JSON.stringify(data, null, 2);
+    await search();
+  };
+
+  q.addEventListener("input", () => {
+    clearTimeout(lastTimer);
+    lastTimer = setTimeout(search, 150);
+  });
+
+  search();
+</script>
+</body>
+</html>
